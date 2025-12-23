@@ -76,13 +76,16 @@ func WithTags(tags ...string) AdditionalMetadata {
 func WithManifest(manifest []byte) AdditionalMetadata {
 	return func(image *Image) error {
 		image.Metadata.RawManifest = manifest
-		image.Metadata.ManifestDigest = fmt.Sprintf("sha256:%x", sha256.Sum256(manifest))
+		calculatedDigest := fmt.Sprintf("sha256:%x", sha256.Sum256(manifest))
+		log.Debugf("WithManifest: calculated digest = %s", calculatedDigest)
+		image.Metadata.ManifestDigest = calculatedDigest
 		return nil
 	}
 }
 
 func WithManifestDigest(digest string) AdditionalMetadata {
 	return func(image *Image) error {
+		log.Debugf("WithManifestDigest: setting digest to %s", digest)
 		image.Metadata.ManifestDigest = digest
 		return nil
 	}

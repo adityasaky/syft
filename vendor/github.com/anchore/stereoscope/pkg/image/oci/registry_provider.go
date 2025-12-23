@@ -46,7 +46,7 @@ func (p *registryImageProvider) Name() string {
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
 func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
-	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
+	log.Debugf("REGISTRY PROVIDER: pulling image info directly from registry image=%q", p.imageStr)
 
 	startTime := time.Now()
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
@@ -98,6 +98,10 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	if manifestBytes, err := img.RawManifest(); err == nil {
 		metadata = append(metadata, image.WithManifest(manifestBytes))
 	}
+
+	// Set the authoritative manifest digest from the descriptor (after WithManifest)
+	log.WithFields("descriptor.Digest", descriptor.Digest.String()).Debug("setting manifest digest from descriptor")
+	metadata = append(metadata, image.WithManifestDigest(descriptor.Digest.String()))
 
 	if platform != nil {
 		metadata = append(metadata,

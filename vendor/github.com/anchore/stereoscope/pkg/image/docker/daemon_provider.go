@@ -434,6 +434,26 @@ func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.Additi
 		image.WithArchitecture(i.Architecture, ""), // since we don't have variant info from the image directly, we don't report it
 		image.WithOS(i.Os),
 	)
+
+	// Extract manifest digest from RepoDigests if available
+	// RepoDigests are in the format: registry/repo@sha256:digest
+	// Note: For locally built images, RepoDigests will be empty and we'll
+	// rely on the calculated digest from the manifest in the tarball
+	if len(i.RepoDigests) > 0 {
+		for _, repoDigest := range i.RepoDigests {
+			if idx := strings.LastIndex(repoDigest, "@"); idx != -1 {
+				digest := repoDigest[idx+1:]
+				if strings.HasPrefix(digest, "sha256:") {
+					log.Debugf("Using manifest digest from RepoDigests: %s", digest)
+					metadata = append(metadata, image.WithManifestDigest(digest))
+					break // Use the first digest found
+				}
+			}
+		}
+	} else {
+		log.Debug("No RepoDigests found - image may be locally built, will use calculated manifest digest")
+	}
+
 	return metadata
 }
 
