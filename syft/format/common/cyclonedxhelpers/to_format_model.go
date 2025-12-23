@@ -7,8 +7,10 @@ import (
 	"time"
 
 	cyclonedx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/distribution/reference"
 	"github.com/google/uuid"
 
+	"github.com/anchore/packageurl-go"
 	stfile "github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/syft/internal/log"
 	"github.com/anchore/syft/syft/artifact"
@@ -331,12 +333,87 @@ func toBomDescriptorComponent(srcMetadata source.Description) *cyclonedx.Compone
 		if err != nil {
 			log.Debugf("unable to get fingerprint of source image metadata=%s: %+v", metadata.ID, err)
 		}
+
+		// Generate Docker PURL for container images
+		var purl string
+		if metadata.ManifestDigest != "" {
+			// Extract the image name without registry/tag
+			imageName := name
+			namespace := ""
+			repositoryURL := ""
+
+			if metadata.UserInput != "" {
+				// Try to parse the user input to get a clean image name
+				ref, err := reference.ParseNormalizedNamed(metadata.UserInput)
+				if err == nil {
+					// Get the name without the registry prefix
+					path := reference.Path(ref)
+					// Split namespace and name
+					parts := strings.Split(path, "/")
+					if len(parts) > 1 {
+						namespace = strings.Join(parts[:len(parts)-1], "/")
+						imageName = parts[len(parts)-1]
+					} else {
+						imageName = parts[0]
+					}
+
+					// Extract repository URL
+					domain := reference.Domain(ref)
+					if domain != "" {
+						repositoryURL = domain
+					}
+				}
+			}
+
+			// Build qualifiers from available metadata
+			var qualifiers []packageurl.Qualifier
+
+			// Add architecture if available
+			if metadata.Architecture != "" {
+				qualifiers = append(qualifiers, packageurl.Qualifier{
+					Key:   "arch",
+					Value: metadata.Architecture,
+				})
+			}
+
+			// Add repository URL if available
+			if repositoryURL != "" {
+				qualifiers = append(qualifiers, packageurl.Qualifier{
+					Key:   "repository_url",
+					Value: repositoryURL,
+				})
+			}
+
+			// Add tag if we can extract it
+			if metadata.UserInput != "" {
+				ref, err := reference.ParseNormalizedNamed(metadata.UserInput)
+				if err == nil {
+					if taggedRef, ok := ref.(reference.NamedTagged); ok {
+						qualifiers = append(qualifiers, packageurl.Qualifier{
+							Key:   "tag",
+							Value: taggedRef.Tag(),
+						})
+					}
+				}
+			}
+
+			p := packageurl.PackageURL{
+				Type:       "docker",
+				Namespace:  namespace,
+				Name:       imageName,
+				Version:    metadata.ManifestDigest,
+				Qualifiers: qualifiers,
+			}
+			purl = p.String()
+		}
+
 		return &cyclonedx.Component{
-			BOMRef:   string(bomRef),
-			Type:     cyclonedx.ComponentTypeContainer,
-			Name:     name,
-			Version:  version,
-			Supplier: toBomSupplier(srcMetadata),
+			BOMRef:     string(bomRef),
+			Type:       cyclonedx.ComponentTypeContainer,
+			Name:       name,
+			Version:    version,
+			PackageURL: purl,
+			Supplier:   toBomSupplier(srcMetadata),
 		}
 	case source.DirectoryMetadata:
 		if name == "" {

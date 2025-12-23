@@ -19,6 +19,112 @@ import (
 	"github.com/anchore/syft/syft/source"
 )
 
+func Test_toBomDescriptorComponent(t *testing.T) {
+	tests := []struct {
+		name             string
+		srcMetadata      source.Description
+		expectedName     string
+		expectedVersion  string
+		expectedType     cyclonedx.ComponentType
+		expectedPURL     string
+		expectedSupplier *cyclonedx.OrganizationalEntity
+	}{
+		{
+			name: "container image with tag and architecture",
+			srcMetadata: source.Description{
+				Name:     "alpine",
+				Version:  "sha256:1234567890abcdef",
+				Supplier: "Alpine Linux",
+				Metadata: source.ImageMetadata{
+					UserInput:      "alpine:3.15",
+					ManifestDigest: "sha256:1234567890abcdef",
+					Architecture:   "amd64",
+					ID:             "test-image-id",
+				},
+			},
+			expectedName:     "alpine",
+			expectedVersion:  "sha256:1234567890abcdef",
+			expectedType:     cyclonedx.ComponentTypeContainer,
+			expectedPURL:     "pkg:docker/library/alpine@sha256%3A1234567890abcdef?arch=amd64&repository_url=docker.io&tag=3.15",
+			expectedSupplier: &cyclonedx.OrganizationalEntity{Name: "Alpine Linux"},
+		},
+		{
+			name: "container image without tag",
+			srcMetadata: source.Description{
+				Name: "nginx",
+				Metadata: source.ImageMetadata{
+					UserInput:      "nginx",
+					ManifestDigest: "sha256:abcdef1234567890",
+					Architecture:   "arm64",
+					ID:             "test-nginx-id",
+				},
+			},
+			expectedName:    "nginx",
+			expectedVersion: "sha256:abcdef1234567890",
+			expectedType:    cyclonedx.ComponentTypeContainer,
+			expectedPURL:    "pkg:docker/library/nginx@sha256%3Aabcdef1234567890?arch=arm64&repository_url=docker.io",
+		},
+		{
+			name: "container image with custom registry",
+			srcMetadata: source.Description{
+				Metadata: source.ImageMetadata{
+					UserInput:      "quay.io/myorg/myapp:v1.2.3",
+					ManifestDigest: "sha256:fedcba0987654321",
+					ID:             "test-custom-id",
+				},
+			},
+			expectedName:    "quay.io/myorg/myapp:v1.2.3",
+			expectedVersion: "sha256:fedcba0987654321",
+			expectedType:    cyclonedx.ComponentTypeContainer,
+			expectedPURL:    "pkg:docker/myorg/myapp@sha256%3Afedcba0987654321?repository_url=quay.io&tag=v1.2.3",
+		},
+		{
+			name: "directory source",
+			srcMetadata: source.Description{
+				Name: "test-dir",
+				Metadata: source.DirectoryMetadata{
+					Path: "/path/to/dir",
+				},
+			},
+			expectedName:    "test-dir",
+			expectedVersion: "",
+			expectedType:    cyclonedx.ComponentTypeFile,
+			expectedPURL:    "", // No PURL for directories
+		},
+		{
+			name: "file source",
+			srcMetadata: source.Description{
+				Name: "test.jar",
+				Metadata: source.FileMetadata{
+					Path: "/path/to/test.jar",
+				},
+			},
+			expectedName:    "test.jar",
+			expectedVersion: "",
+			expectedType:    cyclonedx.ComponentTypeFile,
+			expectedPURL:    "", // No PURL for files
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			component := toBomDescriptorComponent(test.srcMetadata)
+			require.NotNil(t, component)
+
+			assert.Equal(t, test.expectedName, component.Name)
+			assert.Equal(t, test.expectedVersion, component.Version)
+			assert.Equal(t, test.expectedType, component.Type)
+			assert.Equal(t, test.expectedPURL, component.PackageURL)
+
+			if test.expectedSupplier != nil {
+				assert.Equal(t, test.expectedSupplier.Name, component.Supplier.Name)
+			} else {
+				assert.Nil(t, component.Supplier)
+			}
+		})
+	}
+}
+
 func Test_formatCPE(t *testing.T) {
 	tests := []struct {
 		cpe      string
